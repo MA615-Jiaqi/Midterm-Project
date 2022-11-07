@@ -1,0 +1,415 @@
+---
+title: "Midterm Assignment"
+author: "Jiaqi Sun"
+date: "2022-11-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(magrittr)
+library(readxl)
+library(dplyr)
+```
+
+#Tidying the data
+```{r}
+## Start by reading the data
+strawb <- read_xlsx("strawberries-2022oct30-a.xlsx",col_names = TRUE)
+
+## Get the column names and index them
+cnames <- colnames(strawb)
+x <- 1:dim(strawb)[2]
+
+## Column 1 contains two unique values.  
+## Retain column 1 -- those values might be needed.
+unique(strawb[1])
+
+## Column 2 -- contains the years included in this dataset.
+## Keep column 2, of course.
+unique(strawb[2])
+
+## Column 3 -- contains the time periods covered by in the dataset.
+## There's only one -- years.  No info here.  Drop it
+unique(strawb[3])
+
+## Set T as an indicator
+T <- NULL
+
+## Collect number of unique rows in each column
+for(i in x){T <- c(T, dim(unique(strawb[i]))[1])}
+
+## Use T to select columns to drop -- 
+drop_cols <- cnames[which(T == 1)]
+
+## Now, drop the columns with only one unique value.
+strawb %<>% select(!all_of(drop_cols))
+
+## Let's arrange the data frame by year and state.
+strawb %<>% arrange(Year, State)
+```
+
+#Tidying the data
+```{r}
+strawb %<>% separate(col=`Data Item`,
+                    into = c("Strawberries", "type", "items", "units"),
+                    sep = ",",
+                    fill = "right")
+```
+
+#Tibble Organic
+```{r}
+type_organic <- grep("organic", 
+               strawb$type, 
+               ignore.case = T)
+
+Domain_organic <- grep("organic", 
+                      strawb$Domain, 
+                      ignore.case = T)
+
+org_rows <- intersect(type_organic, Domain_organic)
+
+strawb_organic <- strawb %>% slice(org_rows, preserve = FALSE)
+
+strawb_organic[strawb_organic$type == " ORGANIC - SALES", ]$units = strawb_organic[strawb_organic$type == " ORGANIC - SALES", ]$items
+
+
+```
+
+#Tibble Non-Organic
+```{r}
+strawb_non_organic <- strawb %>% filter(!row_number() %in% org_rows)
+
+strawb_non_organic[strawb_non_organic$Strawberries == "STRAWBERRIES - PRICE RECEIVED", ]$items = strawb_non_organic[strawb_non_organic$Strawberries == "STRAWBERRIES - PRICE RECEIVED", ]$type
+```
+
+#Tibble Chemical
+```{r}
+## the chemical data in the column "type" 
+## is in the rows where type = BEARING - Applications
+
+chem_rows <- grep("BEARING - APPLICATIONS", 
+                       strawb_non_organic$type, 
+                       ignore.case = T)
+
+strawb_chem <- strawb_non_organic %>% slice(chem_rows, preserve = FALSE)
+```
+
+#Tidying the Tibble Chemical
+```{r}
+## now clean up the workspace before tackling the three tibbles just created.
+rm(x, T, drop_cols, type_organic, Domain_organic, org_rows, chem_rows,
+  cnames, i)
+
+  before_cols = colnames(strawb_chem)
+  T = NULL
+  x = length(before_cols)
+
+   for(i in 1:x){
+    b <- length(unlist(strawb_chem[,i] %>% unique()) )
+    T <- c(T,b)
+   }
+    
+  drop_cols <- before_cols[which(T == 1)]
+  strawb_chem %<>% select(!all_of(drop_cols))
+  after_cols = colnames(strawb_chem)
+
+## drop_cols is labeling information
+  
+  temp1 <- strawb_chem %>% select(units) %>% distinct()
+  ## in units rows are either NA or AVG
+  
+## separate Domain Category at :
+  
+  strawb_chem %<>% separate(col=`Domain Category`, 
+                                    into = c("dc1", "chem_name"),
+                                    sep = ":", 
+                                    fill = "right")
+  
+temp1 <- strawb_chem %>% select(chem_name) %>% unique()
+length(unlist(temp1))
+
+## first clean it up
+
+aa  <- grep("measured in", 
+                    strawb_chem$items, 
+                    ignore.case = T)
+length(aa)
+
+## so "item" is really units
+
+## are Domain and dc1 the same thing?
+
+sum(strawb_chem$Domain == strawb_chem$dc1) == dim(strawb_chem)[1]
+
+## yes, they are. let's work with dc1. Also, drop State ANSI
+
+strawb_chem %<>% select(Year, State, items, units, dc1, chem_name, Value)
+
+## items should only contain unit names
+## rename units to category
+
+strawb_chem %<>% rename(category = units)
+
+## remove "MEASURED IN " 
+
+strawb_chem$items <- str_remove_all(strawb_chem$items, "MEASURED IN ")
+
+## rename items to units
+strawb_chem %<>% rename(units = items)
+
+## Do all the dc1 entries begen with "Chemical"?
+
+bb  <- grep("CHEMICAL, ", 
+            strawb_chem$dc1, 
+            ignore.case = T)
+length(bb)
+chem <- 1:2112
+
+non_chem_rows <- setdiff(chem, bb)
+length(non_chem_rows)
+
+## on let's look at these rows in a tibble
+
+temp1 <- strawb_chem %>% slice(non_chem_rows)
+
+### !! fertilizers  
+
+## keep them -- probably won't use them as alone tibble
+
+fertilizers <- temp1
+
+## now remove "CHEMICAL, " from the entries in the dc1
+## and rename the column chem_types
+
+strawb_chem$dc1 <- str_remove_all(strawb_chem$dc1, "CHEMICAL, ")
+
+strawb_chem$dc1 %>% unique()
+
+strawb_chem %<>% rename(chem_types = dc1)
+
+## now fix the chem_name column
+
+## remove the parens
+
+strawb_chem$chem_name <- str_remove_all(strawb_chem$chem_name, "\\(")
+
+strawb_chem$chem_name <- str_remove_all(strawb_chem$chem_name, "\\)")
+
+## separate chem_name and chem_code
+
+strawb_chem %<>% separate(col = chem_name,
+                          into = c("chem_name","chem_code"),
+                          sep = "=",
+                          fill = "right"
+                            ) 
+
+## now fill in a label fot NA in the category column
+aa <- which(strawb_chem$units == " LB")
+
+bb <- which(is.na(strawb_chem$category))
+
+sum(aa==bb)==length(aa)
+
+strawb_chem$category[bb] = "Total"
+
+rm(aa, after_cols, b, bb, before_cols, drop_cols, i, non_chem_rows, T, x)
+
+```
+
+#More tidy work to generate columns as "Per Acre", "Average per Acre per Application" and "Average per Acre per Year"
+```{r}
+strawb_chem %>% 
+  select(-chem_code) %>% 
+  pivot_wider(names_from = units, values_from = Value) %>% 
+  rename("per Acre" = " LB") %>% 
+  rename("Average per Acre per Application" =  " LB / ACRE / APPLICATION") %>% 
+  rename("Average per Acre per Year" =  " LB / ACRE / YEAR") -> strawb_chem
+```
+
+#understand the units used in the data set 
+```{r}
+unique(strawb_chem$category)
+
+#we measure unites in 3 ways: 
+#Total, average per acre per year, average per acre per application
+
+#A hundredweight (abbreviated as CWT) is a standard unit of weight or mass used in certain commodities markets. In North America, a hundredweight is equal to 100 pounds(LB) 
+
+#We see that in tibble "strawb_organic", the units are " MEASURED IN $" and " MEASURED IN CWT", while in the tibble"strawb_non_organic", the units are showed as " MEASURED IN $ / CWT", we have to measure in the same unites for better comparison
+```
+
+#Chemical Investigation
+## investigate chemicals commonly used according to "Shopper’s Guide to Pesticides in Produce™" wihch are deadly possions
+```{r}
+chemical_num <- length(unique(strawb_chem$chem_name))
+
+#Bifenthrin, 27 results found, possible human carcinogen
+bb  <- grep("BIFENTHRIN", 
+            strawb_chem$chem_name, 
+            ignore.case = T)
+
+bifen <- strawb_chem %>% slice(bb)
+
+#Carbendazim, nothing found，ormone-disrupting fungicide that damages the male reproductive system and that the EU has banned because of safety concerns.
+cc <- grep("CARBENDAZIM", 
+            strawb_chem$chem_name, 
+            ignore.case = T) 
+
+#chloropicrin, 18 results found，The EU has banned it
+ch  <- grep("chloropicrin", 
+            strawb_chem$chem_name, 
+            ignore.case = T)
+
+chloropicrin <- strawb_chem %>% slice(ch)
+
+#methyl bromide, 2 results found， The most notorious strawberry fumigant
+me  <- grep("methyl bromide", 
+            strawb_chem$chem_name, 
+            ignore.case = T)
+
+methyl <- strawb_chem %>% slice(me)
+
+#1,3-dichloropropene, nothing found， The EU has banned it
+di  <- grep("1,3-dichloropropene", 
+            strawb_chem$chem_name, 
+            ignore.case = T)
+
+#Telone, nothing found, 1,3-dichloropropene, The EU has banned it
+te  <- grep("Telone", 
+            strawb_chem$chem_name, 
+            ignore.case = T)
+```
+
+#Poissons used per acre? per year? per application? 
+##Do these quantities vary by state? by year?
+```{r}
+#BIFENTHRIN used per acre per application, varied by year and state
+bifen %>% 
+  filter(`per Acre` > 0) %>% 
+  select(Year, State, chem_name, `per Acre`) %>% 
+  group_by(Year, State) -> bifen_pa
+
+#BIFENTHRIN used per acre per application, varied by year and state
+bifen %>% 
+  filter(`Average per Acre per Application` > 0) %>% 
+  select(Year, State, chem_name, `Average per Acre per Application`) %>% 
+  group_by(Year, State) -> bifen_papa
+
+#BIFENTHRIN used per acre per year
+bifen %>% 
+  filter(`Average per Acre per Year` > 0) %>% 
+  select(Year, State, chem_name, `Average per Acre per Year`) %>% 
+  group_by(Year, State) ->bifen_papy
+
+#chloropicrin used per acre, varied by year and state
+chloropicrin %>% 
+  filter(`per Acre` > 0) %>% 
+  select(Year, State, chem_name, `per Acre`) %>% 
+  group_by(Year, State) -> chloropicrin_pa
+
+#chloropicrin used per acre per application, varied by year and state
+chloropicrin %>% 
+  filter(`Average per Acre per Application` > 0) %>% 
+  select(Year, State, chem_name, `Average per Acre per Application`) %>% 
+  group_by(Year, State) -> chloropicrin_papa
+
+#chloropicrin used per acre per year, varied by year and state
+chloropicrin %>% 
+  filter(`Average per Acre per Year` > 0) %>% 
+  select(Year, State, chem_name,`Average per Acre per Year`) %>% 
+  group_by(Year, State) -> chloropicrin_papy
+
+#methyl used per acre per application, varied by year and state
+#nothing returned (with footnote)
+
+pa <- rbind(bifen_pa, chloropicrin_pa)
+papa <- rbind(bifen_papa, chloropicrin_papa)
+papy <- rbind(bifen_papy, chloropicrin_papy)
+```
+
+
+## investigate chemicals commonly used，wihch are safe ones
+```{r}
+
+#Acibenzolar-S-methyl, 12 found, has little toxicity to mammals with an LD50 of over 2000 mg/kg (rats, oral). However, it can cause moderate eye irritation.
+acib  <- grep(" ACIBENZOLAR-S-METHYL ", 
+            strawb_chem$chem_name, 
+            ignore.case = T)
+
+ACIB <- strawb_chem %>% slice(acib)
+
+#Acetamiprid, 16 found, has been classified by the EPA as “unlikely” to be a human carcinogen.
+acet  <- grep(" ACETAMIPRID ", 
+            strawb_chem$chem_name, 
+            ignore.case = T)
+
+ACET <- strawb_chem %>% slice(acet)
+
+#acequinocyl, 10 found, unlikely to present a risk to consumer health.
+aceq  <- grep(" ACEQUINOCYL ", 
+            strawb_chem$chem_name, 
+            ignore.case = T)
+
+ACEQ <- strawb_chem %>% slice(aceq)
+```
+
+#Building tibbles given graph"3-Distribution-of-Strawberry-Production-in-the-US-by-state-Bertelsen-1995.png"
+##Tibble California
+```{r}
+strawb_chem_ca <- strawb_chem %>% 
+  filter(State == "CALIFORNIA")
+```
+##Tibble FLORIDA
+```{r}
+strawb_chem_fl <- strawb_chem %>% 
+  filter(State == "FLORIDA")
+```
+##Tibble OREGON
+```{r}
+strawb_chem_or <- strawb_chem %>% 
+  filter(State == "OREGON")
+```
+
+#Graphics Exploration with chemical
+```{r}
+# plot
+# load library
+library(ggplot2)
+
+# Create test data.
+hazardous_chems <- data.frame(
+  category=c("Bifenthrin", "chloropicrin", "methyl bromide"),
+  count=c(27, 18, 3)
+)
+ 
+# Compute percentages
+hazardous_chems$fraction <- hazardous_chems$count / sum(hazardous_chems$count)
+
+# Compute the cumulative percentages (top of each rectangle)
+hazardous_chems$ymax <- cumsum(hazardous_chems$fraction)
+
+# Compute the bottom of each rectangle
+hazardous_chems$ymin <- c(0, head(hazardous_chems$ymax, n=-1))
+
+# Compute label position
+hazardous_chems$labelPosition <- (hazardous_chems$ymax + hazardous_chems$ymin) / 2
+
+# Compute a good label
+hazardous_chems$label <- paste0(hazardous_chems$category, "\n value: ", hazardous_chems$count)
+
+# Make the plot
+ggplot(hazardous_chems, aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=category)) +
+  geom_rect() +
+  geom_label( x=3.5, aes(y=labelPosition, label=label), size=4) +
+  scale_fill_brewer(palette=4) +
+  coord_polar(theta="y") +
+  xlim(c(2, 4)) +
+  theme_void() +
+  theme(legend.position = "none")
+```
+

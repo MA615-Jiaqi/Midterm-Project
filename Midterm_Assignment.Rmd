@@ -236,7 +236,7 @@ strawb_chem %>%
 unique(strawb_chem$category)
 
 #we measure unites in 3 ways: 
-#Total, average per acre per year, average per acre per application
+#Total(per acre), average per acre per year, average per acre per application
 
 #A hundredweight (abbreviated as CWT) is a standard unit of weight or mass used in certain commodities markets. In North America, a hundredweight is equal to 100 pounds(LB) 
 
@@ -330,6 +330,9 @@ chloropicrin %>%
 pa <- rbind(bifen_pa, chloropicrin_pa)
 papa <- rbind(bifen_papa, chloropicrin_papa)
 papy <- rbind(bifen_papy, chloropicrin_papy)
+
+pois_all <- rbind(bifen_pa,bifen_papa,bifen_papy, chloropicrin_pa, chloropicrin_papa, chloropicrin_papy)
+
 ```
 
 
@@ -375,7 +378,6 @@ strawb_chem_or <- strawb_chem %>%
   filter(State == "OREGON")
 ```
 
-#Graphics Exploration with chemical
 ```{r}
 # plot
 # load library
@@ -411,5 +413,26 @@ ggplot(hazardous_chems, aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=category)
   xlim(c(2, 4)) +
   theme_void() +
   theme(legend.position = "none")
+```
+
+#Chemical graphic exploration
+
+```{r}
+#Florida uses far more less poisson chemicals than California and it stopped using poisson chemicals gradually in recent years
+
+#general use of chemicals
+ggplot(pois_all, aes(x = chem_name, fill = State)) + geom_bar() + facet_wrap(~Year)
+
+#Average per Acre per Application
+ggplot(papa, aes(x = as.double(`Average per Acre per Application`), fill = State)) + geom_histogram(binwidth = 180) +
+  facet_wrap(~Year)
+
+#Average per Acre per Year
+ggplot(papy, aes(x = as.double(`Average per Acre per Year`), fill = State)) + geom_histogram(binwidth = 180) +
+  facet_wrap(~Year)
+
+#Average per Acre 
+ggplot(pa, aes(x = as.double(`per Acre`), fill = State)) + geom_histogram(binwidth = 1000000) +
+  facet_wrap(~Year)
 ```
 
